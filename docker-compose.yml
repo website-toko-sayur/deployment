@@ -1,0 +1,205 @@
+name: veggo
+services:
+  veggo-postgres:
+    image: postgres:16
+    container_name: veggo-postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    ports:
+      - "${DATABASE_HOST_PORT}:${DATABASE_CONT_PORT}"
+    environment:
+      POSTGRES_USER: ${DATABASE_USER}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+    volumes:
+      - postgresql_data:/var/lib/postgresql/data
+    networks:
+      - veggo-postgres-network
+
+  veggo-minio:
+    image: minio/minio:latest
+    container_name: veggo-minio
+    ports:
+      - "${MINIO_HOST_PORT}:${MINIO_CONT_PORT}"
+      - "${MINIO_DASH_HOST_PORT}:${MINIO_DASH_HOST_PORT}"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - veggo-minio-network
+
+  veggo-redis:
+    image: redis:7.2
+    container_name: veggo-redis
+    ports:
+      - "${REDIS_HOST_PORT}:${REDIS_CONT_PORT}"
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --save ""
+      --appendonly no
+      --maxclients 10000
+      --timeout 0
+      --tcp-keepalive 60
+    networks:
+      - veggo-redis-network
+
+  veggo-redpanda:
+    image: redpandadata/redpanda:latest
+    container_name: veggo-redpanda
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "info"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "${KAFKA_HOST_PORT}:${KAFKA_CONT_PORT}"
+      - "${KAFKA_INTERNAL_PORT}:${KAFKA_INTERNAL_PORT}"
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp=1
+      - --memory=512M
+      - --reserve-memory=0M
+      - --node-id=0
+      - --check=false
+
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
+
+      - --advertise-kafka-addr=internal://veggo-redpanda:9092,external://localhost:19092
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    networks:
+      - veggo-redpanda-network
+
+  veggo-redpanda-console:
+    image: docker.redpanda.com/redpandadata/console:latest
+    container_name: veggo-redpanda-console
+    depends_on:
+      veggo-redpanda:
+        condition: service_healthy
+    ports:
+      - "${KAFKA_UI_HOST_PORT}:8080"
+    environment:
+      KAFKA_BROKERS: veggo-redpanda:9092
+    networks:
+      - veggo-redpanda-network
+
+  veggo-opensearch:
+    image: opensearchproject/opensearch:latest
+    container_name: veggo-opensearch
+    ports:
+      - "${OPENSEARCH_HOST_PORT}:9200"
+      - "${OPENSEARCH_INTERNAL_PORT}:9600"
+    environment:
+      - discovery.type=single-node
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=OpenSearch#2026Dev
+      - OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g # Local Development
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+    networks:
+      - veggo-opensearch-network
+
+  veggo-opensearch-dashboard:
+    image: opensearchproject/opensearch-dashboards:latest
+    container_name: veggo-opensearch-dashboard
+    depends_on:
+      - veggo-opensearch
+    ports:
+      - "${OPENSEARCH_DASHBOARD_PORT}:5601"
+    environment:
+      OPENSEARCH_HOSTS: '["http://veggo-opensearch:9200"]'
+      DISABLE_SECURITY_DASHBOARDS_PLUGIN: "true"
+    networks:
+      - veggo-opensearch-network
+
+  veggo-user-service:
+    build:
+      context: ../services/user-service
+      dockerfile: Dockerfile
+    image: veggo/user-service:latest
+    container_name: veggo-user-service
+    depends_on:
+      veggo-postgres:
+        condition: service_healthy
+      veggo-redpanda:
+        condition: service_started
+      veggo-minio:
+        condition: service_started
+      veggo-redis:
+        condition: service_started
+    ports:
+      - "${USER_SERVICE_CONT_PORT}:${USER_SERVICE_CONT_PORT}"
+    environment:
+      APP_PORT: ${USER_SERVICE_CONT_PORT}
+      APP_ENV: ${APP_ENV}
+      APP_NAME: ${USER_SERVICE_NAME}
+      WEB_PREFORK: ${WEB_PREFORK}
+      LOG_LEVEL: ${LOG_LEVEL}
+      JWT_SECRET_KEY: ${JWT_SECRET}
+      JWT_ISSUER: ${JWT_ISSUER}
+      URL_FORGOT_PASSWORD: veggo-user-service:${USER_SERVICE_CONT_PORT}
+      URL_FRONT_FE: "http://localhost:3000" # sementara
+      DATABASE_HOST: veggo-postgres
+      DATABASE_PORT: ${DATABASE_CONT_PORT}
+      DATABASE_USER: ${DATABASE_USER}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+      DATABASE_NAME: ${USER_SERVICE_DB}
+      DATABASE_MAX_OPEN_CONNECTION: ${DATABASE_MAX_OPEN_CONNECTION}
+      DATABASE_MAX_IDLE_CONNECTION: ${DATABASE_MAX_IDLE_CONNECTION}
+      KAFKA_AUTO_OFFSET_RESET: ${KAFKA_AUTO_OFFSET_RESET}
+      KAFKA_BOOTSTRAP_SERVERS: veggo-redpanda:${KAFKA_CONT_PORT}
+      KAFKA_GROUP_ID: ${USER_SERVICE_KAFKA_GROUP_ID}
+      KAFKA_PRODUCER_ENABLED: ${KAFKA_PRODUCER_ENABLED}
+      TOPIC_NOTIF_EMAIL_VERIFICATION: ${TOPIC_NOTIF_EMAIL_VERIFICATION}
+      TOPIC_NOTIF_EMAIL_FORGOT_PASSWORD: ${TOPIC_NOTIF_EMAIL_FORGOT_PASSWORD}
+      TOPIC_NOTIF_EMAIL_CREATE_CUSTOMER: ${TOPIC_NOTIF_EMAIL_CREATE_CUSTOMER}
+      TOPIC_NOTIF_EMAIL_UPDATE_CUSTOMER: ${TOPIC_NOTIF_EMAIL_UPDATE_CUSTOMER}
+      TOPIC_PUSH_NOTIF: ${TOPIC_PUSH_NOTIF}
+      MINIO_ENDPOINT: veggo-minio:${MINIO_CONT_PORT}
+      MINIO_PUBLIC_URL: http://veggo-minio:${MINIO_CONT_PORT}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_BUCKET: ${USER_SERVICE_MINIO_BUCKET}
+      MINIO_USE_SSL: ${MINIO_USE_SSL}
+      REDIS_HOST: veggo-redis
+      REDIS_PORT: ${REDIS_CONT_PORT}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      GATEWAY_SECRET_KEY: ${GATEWAY_SECRET_KEY}
+    networks:
+      - veggo-user-service-network
+      - veggo-postgres-network
+      - veggo-redpanda-network
+      - veggo-minio-network
+      - veggo-redis-network
+
+volumes:
+  postgresql_data:
+  minio_data:
+  opensearch_data:
+  redpanda_data:
+
+networks:
+  veggo-postgres-network:
+    driver: bridge
+  veggo-minio-network:
+    driver: bridge
+  veggo-redis-network:
+    driver: bridge
+  veggo-redpanda-network:
+    driver: bridge
+  veggo-opensearch-network:
+    driver: bridge
+  veggo-user-service-network:
+    driver: bridge
