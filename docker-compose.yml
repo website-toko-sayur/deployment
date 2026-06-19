@@ -59,8 +59,8 @@ services:
       timeout: 5s
       retries: 10
     ports:
-      - "${KAFKA_HOST_PORT}:${KAFKA_CONT_PORT}"
       - "${KAFKA_INTERNAL_PORT}:${KAFKA_INTERNAL_PORT}"
+      - "${KAFKA_HOST_PORT}:${KAFKA_CONT_PORT}"
     command:
       - redpanda
       - start
@@ -95,12 +95,17 @@ services:
   veggo-opensearch:
     image: opensearchproject/opensearch:latest
     container_name: veggo-opensearch
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
     ports:
       - "${OPENSEARCH_HOST_PORT}:9200"
       - "${OPENSEARCH_INTERNAL_PORT}:9600"
     environment:
       - discovery.type=single-node
-      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=OpenSearch#2026Dev
+      - DISABLE_SECURITY_PLUGIN=true
       - OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g # Local Development
     ulimits:
       memlock:
@@ -115,7 +120,8 @@ services:
     image: opensearchproject/opensearch-dashboards:latest
     container_name: veggo-opensearch-dashboard
     depends_on:
-      - veggo-opensearch
+      veggo-opensearch:
+        condition: service_healthy
     ports:
       - "${OPENSEARCH_DASHBOARD_PORT}:5601"
     environment:
@@ -159,7 +165,7 @@ services:
       DATABASE_MAX_OPEN_CONNECTION: ${DATABASE_MAX_OPEN_CONNECTION}
       DATABASE_MAX_IDLE_CONNECTION: ${DATABASE_MAX_IDLE_CONNECTION}
       KAFKA_AUTO_OFFSET_RESET: ${KAFKA_AUTO_OFFSET_RESET}
-      KAFKA_BOOTSTRAP_SERVERS: veggo-redpanda:${KAFKA_CONT_PORT}
+      KAFKA_BOOTSTRAP_SERVERS: veggo-redpanda:${KAFKA_INTERNAL_PORT}
       KAFKA_GROUP_ID: ${USER_SERVICE_KAFKA_GROUP_ID}
       KAFKA_PRODUCER_ENABLED: ${KAFKA_PRODUCER_ENABLED}
       TOPIC_NOTIF_EMAIL_VERIFICATION: ${TOPIC_NOTIF_EMAIL_VERIFICATION}
