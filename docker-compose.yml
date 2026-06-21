@@ -17,7 +17,7 @@ services:
     volumes:
       - postgresql_data:/var/lib/postgresql/data
     networks:
-      - veggo-postgres-network
+      - veggo-network
 
   veggo-minio:
     image: minio/minio:latest
@@ -32,7 +32,7 @@ services:
     volumes:
       - minio_data:/data
     networks:
-      - veggo-minio-network
+      - veggo-network
 
   veggo-redis:
     image: redis:7.2
@@ -48,7 +48,7 @@ services:
       --timeout 0
       --tcp-keepalive 60
     networks:
-      - veggo-redis-network
+      - veggo-network
 
   veggo-redpanda:
     image: redpandadata/redpanda:latest
@@ -77,7 +77,7 @@ services:
     volumes:
       - redpanda_data:/var/lib/redpanda/data
     networks:
-      - veggo-redpanda-network
+      - veggo-network
 
   veggo-redpanda-console:
     image: docker.redpanda.com/redpandadata/console:latest
@@ -90,7 +90,7 @@ services:
     environment:
       KAFKA_BROKERS: veggo-redpanda:9092
     networks:
-      - veggo-redpanda-network
+      - veggo-network
 
   veggo-opensearch:
     image: opensearchproject/opensearch:latest
@@ -114,7 +114,7 @@ services:
     volumes:
       - opensearch_data:/usr/share/opensearch/data
     networks:
-      - veggo-opensearch-network
+      - veggo-network
 
   veggo-opensearch-dashboard:
     image: opensearchproject/opensearch-dashboards:latest
@@ -128,7 +128,39 @@ services:
       OPENSEARCH_HOSTS: '["http://veggo-opensearch:9200"]'
       DISABLE_SECURITY_DASHBOARDS_PLUGIN: "true"
     networks:
-      - veggo-opensearch-network
+      - veggo-network
+
+  veggo-api-gateway-service:
+    build:
+      context: ../services/api-gateway
+      dockerfile: Dockerfile
+    image: veggo/api-gateway-service:latest
+    container_name: veggo-api-gateway-service
+    depends_on:
+      veggo-redis:
+        condition: service_started
+    ports:
+      - "${API_GATEWAY_HOST_PORT}:${API_GATEWAY_CONT_PORT}"
+    environment:
+      APP_PORT: ${API_GATEWAY_CONT_PORT}
+      APP_ENV: ${APP_ENV}
+      APP_NAME: ${API_GATEWAY}
+      WEB_PREFORK: ${WEB_PREFORK}
+      LOG_LEVEL: ${LOG_LEVEL}
+      JWT_SECRET_KEY: ${JWT_SECRET}
+      USER_SERVICE_URL: http://veggo-user-service:${USER_SERVICE_CONT_PORT}
+      PRODUCT_SERVICE_URL:
+      ORDER_SERVICE_URL:
+      PAYMENT_SERVICE_URL:
+      NOTIFICATION_SERVICE_URL:
+      RATE_LIMIT_REQUESTS_PER_SECOND: ${RATE_LIMIT_REQUESTS_PER_SECOND}
+      RATE_LIMIT_BURST_SIZE: ${RATE_LIMIT_BURST_SIZE}
+      REDIS_HOST: veggo-redis
+      REDIS_PORT: ${REDIS_CONT_PORT}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      GATEWAY_SECRET_KEY: ${GATEWAY_SECRET_KEY}
+    networks:
+      - veggo-network
 
   veggo-user-service:
     build:
@@ -145,8 +177,6 @@ services:
         condition: service_started
       veggo-redis:
         condition: service_started
-    ports:
-      - "${USER_SERVICE_CONT_PORT}:${USER_SERVICE_CONT_PORT}"
     environment:
       APP_PORT: ${USER_SERVICE_CONT_PORT}
       APP_ENV: ${APP_ENV}
@@ -184,11 +214,7 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       GATEWAY_SECRET_KEY: ${GATEWAY_SECRET_KEY}
     networks:
-      - veggo-user-service-network
-      - veggo-postgres-network
-      - veggo-redpanda-network
-      - veggo-minio-network
-      - veggo-redis-network
+      - veggo-network
 
 volumes:
   postgresql_data:
@@ -197,15 +223,5 @@ volumes:
   redpanda_data:
 
 networks:
-  veggo-postgres-network:
-    driver: bridge
-  veggo-minio-network:
-    driver: bridge
-  veggo-redis-network:
-    driver: bridge
-  veggo-redpanda-network:
-    driver: bridge
-  veggo-opensearch-network:
-    driver: bridge
-  veggo-user-service-network:
+  veggo-network:
     driver: bridge
