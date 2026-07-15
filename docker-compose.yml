@@ -1,8 +1,8 @@
 name: veggo
 services:
-  veggo-postgres:
+  postgres-veggo:
     image: postgres:16
-    container_name: veggo-postgres
+    container_name: postgres-veggo
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER}"]
       interval: 5s
@@ -17,11 +17,11 @@ services:
     volumes:
       - postgresql_data:/var/lib/postgresql/data
     networks:
-      - veggo-network
+      - network-veggo
 
-  veggo-minio:
+  minio-veggo:
     image: minio/minio:latest
-    container_name: veggo-minio
+    container_name: minio-veggo
     ports:
       - "${MINIO_HOST_PORT}:${MINIO_CONT_PORT}"
       - "${MINIO_DASH_HOST_PORT}:${MINIO_DASH_HOST_PORT}"
@@ -32,11 +32,11 @@ services:
     volumes:
       - minio_data:/data
     networks:
-      - veggo-network
+      - network-veggo
 
-  veggo-redis:
+  redis-veggo:
     image: redis:7.2
-    container_name: veggo-redis
+    container_name: redis-veggo
     ports:
       - "${REDIS_HOST_PORT}:${REDIS_CONT_PORT}"
     command: >
@@ -48,11 +48,11 @@ services:
       --timeout 0
       --tcp-keepalive 60
     networks:
-      - veggo-network
+      - network-veggo
 
-  veggo-redpanda:
+  redpanda-veggo:
     image: redpandadata/redpanda:latest
-    container_name: veggo-redpanda
+    container_name: redpanda-veggo
     healthcheck:
       test: ["CMD", "rpk", "cluster", "info"]
       interval: 10s
@@ -73,28 +73,28 @@ services:
 
       - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
 
-      - --advertise-kafka-addr=internal://veggo-redpanda:9092,external://localhost:19092
+      - --advertise-kafka-addr=internal://redpanda-veggo:9092,external://localhost:19092
     volumes:
       - redpanda_data:/var/lib/redpanda/data
     networks:
-      - veggo-network
+    - network-veggo
 
-  veggo-redpanda-console:
+  redpanda-console-veggo:
     image: docker.redpanda.com/redpandadata/console:latest
-    container_name: veggo-redpanda-console
+    container_name: redpanda-console-veggo
     depends_on:
-      veggo-redpanda:
+      redpanda-veggo:
         condition: service_healthy
     ports:
       - "${KAFKA_UI_HOST_PORT}:8080"
     environment:
-      KAFKA_BROKERS: veggo-redpanda:9092
+      KAFKA_BROKERS: redpanda-veggo:9092
     networks:
-      - veggo-network
+      - network-veggo
 
-  veggo-opensearch:
+  opensearch-veggo:
     image: opensearchproject/opensearch:latest
-    container_name: veggo-opensearch
+    container_name: opensearch-veggo
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:9200 || exit 1"]
       interval: 10s
@@ -114,30 +114,30 @@ services:
     volumes:
       - opensearch_data:/usr/share/opensearch/data
     networks:
-      - veggo-network
+      - network-veggo
 
-  veggo-opensearch-dashboard:
+  opensearch-dashboard-veggo:
     image: opensearchproject/opensearch-dashboards:latest
-    container_name: veggo-opensearch-dashboard
+    container_name: opensearch-dashboard-veggo
     depends_on:
-      veggo-opensearch:
+      opensearch-veggo:
         condition: service_healthy
     ports:
       - "${OPENSEARCH_DASHBOARD_PORT}:5601"
     environment:
-      OPENSEARCH_HOSTS: '["http://veggo-opensearch:9200"]'
+      OPENSEARCH_HOSTS: '["http://opensearch-veggo:9200"]'
       DISABLE_SECURITY_DASHBOARDS_PLUGIN: "true"
     networks:
-      - veggo-network
+      - network-veggo
 
-  veggo-api-gateway-service:
+  api-gateway-veggo:
     build:
       context: ../services/api-gateway
       dockerfile: Dockerfile
-    image: veggo/api-gateway-service:latest
-    container_name: veggo-api-gateway-service
+    image: veggo/api-gateway:latest
+    container_name: api-gateway-veggo
     depends_on:
-      veggo-redis:
+      redis-veggo:
         condition: service_started
     ports:
       - "${API_GATEWAY_HOST_PORT}:${API_GATEWAY_CONT_PORT}"
@@ -148,34 +148,34 @@ services:
       WEB_PREFORK: ${WEB_PREFORK}
       LOG_LEVEL: ${LOG_LEVEL}
       JWT_SECRET: ${JWT_SECRET}
-      USER_SERVICE_URL: http://veggo-user-service:${USER_SERVICE_CONT_PORT}
-      PRODUCT_SERVICE_URL: http://veggo-product-service:${PRODUCT_SERVICE_CONT_PORT}
+      USER_SERVICE_URL: http://user-service-veggo:${USER_SERVICE_CONT_PORT}
+      PRODUCT_SERVICE_URL: http://product-service-veggo:${PRODUCT_SERVICE_CONT_PORT}
       ORDER_SERVICE_URL:
       PAYMENT_SERVICE_URL:
       NOTIFICATION_SERVICE_URL:
       RATE_LIMIT_REQUESTS_PER_SECOND: ${RATE_LIMIT_REQUESTS_PER_SECOND}
       RATE_LIMIT_BURST_SIZE: ${RATE_LIMIT_BURST_SIZE}
-      REDIS_HOST: veggo-redis
+      REDIS_HOST: redis-veggo
       REDIS_PORT: ${REDIS_CONT_PORT}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       GATEWAY_SECRET_KEY: ${GATEWAY_SECRET_KEY}
     networks:
-      - veggo-network
+      - network-veggo
 
-  veggo-user-service:
+  user-service-veggo:
     build:
       context: ../services/user-service
       dockerfile: Dockerfile
     image: veggo/user-service:latest
-    container_name: veggo-user-service
+    container_name: user-service-veggo
     depends_on:
-      veggo-postgres:
+      postgres-veggo:
         condition: service_healthy
-      veggo-redpanda:
+      redpanda-veggo:
         condition: service_started
-      veggo-minio:
+      minio-veggo:
         condition: service_started
-      veggo-redis:
+      redis-veggo:
         condition: service_started
     environment:
       APP_PORT: ${USER_SERVICE_CONT_PORT}
@@ -185,9 +185,9 @@ services:
       LOG_LEVEL: ${LOG_LEVEL}
       JWT_SECRET_KEY: ${JWT_SECRET}
       JWT_ISSUER: ${JWT_ISSUER}
-      URL_FORGOT_PASSWORD: veggo-user-service:${USER_SERVICE_CONT_PORT}
+      URL_FORGOT_PASSWORD: user-service-veggo:${USER_SERVICE_CONT_PORT}
       URL_FRONT_FE: "http://localhost:3000" # sementara
-      DATABASE_HOST: veggo-postgres
+      DATABASE_HOST: postgres-veggo
       DATABASE_PORT: ${DATABASE_CONT_PORT}
       DATABASE_USER: ${DATABASE_USER}
       DATABASE_PASSWORD: ${DATABASE_PASSWORD}
@@ -195,7 +195,7 @@ services:
       DATABASE_MAX_OPEN_CONNECTION: ${DATABASE_MAX_OPEN_CONNECTION}
       DATABASE_MAX_IDLE_CONNECTION: ${DATABASE_MAX_IDLE_CONNECTION}
       KAFKA_AUTO_OFFSET_RESET: ${KAFKA_AUTO_OFFSET_RESET}
-      KAFKA_BOOTSTRAP_SERVERS: veggo-redpanda:${KAFKA_INTERNAL_PORT}
+      KAFKA_BOOTSTRAP_SERVERS: redpanda-veggo:${KAFKA_INTERNAL_PORT}
       KAFKA_GROUP_ID: ${USER_SERVICE_KAFKA_GROUP_ID}
       KAFKA_PRODUCER_ENABLED: ${KAFKA_PRODUCER_ENABLED}
       TOPIC_NOTIF_EMAIL_VERIFICATION: ${TOPIC_NOTIF_EMAIL_VERIFICATION}
@@ -203,35 +203,35 @@ services:
       TOPIC_NOTIF_EMAIL_CREATE_CUSTOMER: ${TOPIC_NOTIF_EMAIL_CREATE_CUSTOMER}
       TOPIC_NOTIF_EMAIL_UPDATE_CUSTOMER: ${TOPIC_NOTIF_EMAIL_UPDATE_CUSTOMER}
       TOPIC_PUSH_NOTIF: ${TOPIC_PUSH_NOTIF}
-      MINIO_ENDPOINT: veggo-minio:${MINIO_CONT_PORT}
-      MINIO_PUBLIC_URL: http://veggo-minio:${MINIO_CONT_PORT}
+      MINIO_ENDPOINT: minio-veggo:${MINIO_CONT_PORT}
+      MINIO_PUBLIC_URL: http://minio-veggo:${MINIO_CONT_PORT}
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
       MINIO_BUCKET: ${USER_SERVICE_MINIO_BUCKET}
       MINIO_USE_SSL: ${MINIO_USE_SSL}
-      REDIS_HOST: veggo-redis
+      REDIS_HOST: redis-veggo
       REDIS_PORT: ${REDIS_CONT_PORT}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       GATEWAY_SECRET_KEY: ${GATEWAY_SECRET_KEY}
     networks:
-      - veggo-network
+      - network-veggo
 
-  veggo-product-service:
+  product-service-veggo:
     build:
       context: ../services/product-service
       dockerfile: Dockerfile
     image: veggo/product-service:latest
-    container_name: veggo-product-service
+    container_name: product-service-veggo
     depends_on:
-      veggo-postgres:
+      postgres-veggo:
         condition: service_healthy
-      veggo-redpanda:
+      redpanda-veggo:
         condition: service_started
-      veggo-minio:
+      minio-veggo:
         condition: service_started
-      veggo-redis:
+      redis-veggo:
         condition: service_started
-      veggo-opensearch:
+      opensearch-veggo:
         condition: service_healthy
     environment:
       APP_PORT: ${PRODUCT_SERVICE_CONT_PORT}
@@ -243,7 +243,7 @@ services:
       GATEWAY_SECRET_KEY: ${GATEWAY_SECRET_KEY}
       REQUEST_API_GATEWAY: ${REQUEST_API_GATEWAY}
       INTERNAL_SECRET_KEY: ${INTERNAL_SECRET_KEY}
-      DATABASE_HOST: veggo-postgres
+      DATABASE_HOST: postgres-veggo
       DATABASE_PORT: ${DATABASE_CONT_PORT}
       DATABASE_USER: ${DATABASE_USER}
       DATABASE_PASSWORD: ${DATABASE_PASSWORD}
@@ -251,25 +251,195 @@ services:
       DATABASE_MAX_OPEN_CONNECTION: ${DATABASE_MAX_OPEN_CONNECTION}
       DATABASE_MAX_IDLE_CONNECTION: ${DATABASE_MAX_IDLE_CONNECTION}
       KAFKA_AUTO_OFFSET_RESET: ${KAFKA_AUTO_OFFSET_RESET}
-      KAFKA_BOOTSTRAP_SERVERS: veggo-redpanda:${KAFKA_INTERNAL_PORT}
+      KAFKA_BOOTSTRAP_SERVERS: redpanda-veggo:${KAFKA_INTERNAL_PORT}
       KAFKA_GROUP_ID: ${PRODUCT_SERVICE_KAFKA_GROUP_ID}
       KAFKA_PRODUCER_ENABLED: ${KAFKA_PRODUCER_ENABLED}
       TOPIC_PRODUCT_PUBLISH: ${TOPIC_PRODUCT_PUBLISH}
       TOPIC_PRODUCT_DELETE: ${TOPIC_PRODUCT_DELETE}
-      MINIO_ENDPOINT: veggo-minio:${MINIO_CONT_PORT}
-      MINIO_PUBLIC_URL: http://veggo-minio:${MINIO_CONT_PORT}
+      MINIO_ENDPOINT: minio-veggo:${MINIO_CONT_PORT}
+      MINIO_PUBLIC_URL: http://minio-veggo:${MINIO_CONT_PORT}
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
       MINIO_BUCKET: ${PRODUCT_SERVICE_MINIO_BUCKET}
       MINIO_USE_SSL: ${MINIO_USE_SSL}
-      REDIS_HOST: veggo-redis
+      REDIS_HOST: redis-veggo
       REDIS_PORT: ${REDIS_CONT_PORT}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
-      OPENSEARCH_HOST: http://veggo-opensearch:9200
+      OPENSEARCH_HOST: http://opensearch-veggo:9200
       OPENSEARCH_USERNAME: ${OPENSEARCH_USERNAME}
       OPENSEARCH_PASSWORD: ${OPENSEARCH_PASSWORD}
     networks:
-      - veggo-network
+      - network-veggo
+
+  payment-service-veggo:
+    build:
+      context: ../services/payment-service
+      dockerfile: Dockerfile
+    image: veggo/payment-service:latest
+    container_name: payment-service-veggo
+    depends_on:
+      postgres-veggo:
+        condition: service_healthy
+      redpanda-veggo:
+        condition: service_started
+      redis-veggo:
+        condition: service_started
+    environment:
+      APP_PORT: ${PRODUCT_SERVICE_CONT_PORT}
+      APP_ENV: ${APP_ENV}
+      APP_NAME: ${PRODUCT_SERVICE_NAME}
+      WEB_PREFORK: ${WEB_PREFORK}
+      LOG_LEVEL: ${LOG_LEVEL}
+      JWT_SECRET_KEY: ${JWT_SECRET}
+      GATEWAY_SECRET_KEY: ${GATEWAY_SECRET_KEY}
+      REQUEST_API_GATEWAY: ${REQUEST_API_GATEWAY}
+      INTERNAL_SECRET_KEY: ${INTERNAL_SECRET_KEY}
+      SERVER_TIMEOUT: ${SERVER_TIMEOUT}
+      PRODUCT_SERVICE_URL: http://product-service-veggo:${PRODUCT_SERVICE_CONT_PORT}
+      USER_SERVICE_URL: http://user-service-veggo:${USER_SERVICE_CONT_PORT}
+      ORDER_SERVICE_URL: http://order-service-veggo:${ORDER_SERVICE_CONT_PORT}
+      DATABASE_HOST: postgres-veggo
+      DATABASE_PORT: ${DATABASE_CONT_PORT}
+      DATABASE_USER: ${DATABASE_USER}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+      DATABASE_NAME: ${PAYMENT_SERVICE_DB}
+      DATABASE_MAX_OPEN_CONNECTION: ${DATABASE_MAX_OPEN_CONNECTION}
+      DATABASE_MAX_IDLE_CONNECTION: ${DATABASE_MAX_IDLE_CONNECTION}
+      KAFKA_AUTO_OFFSET_RESET: ${KAFKA_AUTO_OFFSET_RESET}
+      KAFKA_BOOTSTRAP_SERVERS: redpanda-veggo:${KAFKA_INTERNAL_PORT}
+      KAFKA_GROUP_ID: ${PAYMENT_SERVICE_KAFKA_GROUP_ID}
+      KAFKA_PRODUCER_ENABLED: ${KAFKA_PRODUCER_ENABLED}
+      TOPIC_PAYMENT_SUCCESS: ${TOPIC_PAYMENT_SUCCESS}
+      REDIS_HOST: redis-veggo
+      REDIS_PORT: ${REDIS_CONT_PORT}
+      REDIS_PASSWORD: ${REDIS_PASSWORD
+      MIDTRANS_SERVER_KEY: ${MIDTRANS_SERVER_KEY}
+      MIDTRANS_ENVIRONMENT: ${MIDTRANS_ENVIRONMENT}
+    networks:
+      - network-veggo
+
+  order-service-veggo:
+    build:
+      context: ../services/order-service
+      dockerfile: Dockerfile
+    image: veggo/order-service:latest
+    container_name: order-service-veggo
+    depends_on:
+      postgres-veggo:
+        condition: service_healthy
+      redpanda-veggo:
+        condition: service_started
+      redis-veggo:
+        condition: service_started
+      opensearch-veggo:
+        condition: service_healthy
+    environment:
+      APP_PORT: ${ORDER_SERVICE_CONT_PORT}
+      APP_ENV: ${APP_ENV}
+      APP_NAME: ${ORDER_SERVICE_NAME}
+      WEB_PREFORK: ${WEB_PREFORK}
+      LOG_LEVEL: ${LOG_LEVEL}
+      JWT_SECRET_KEY: ${JWT_SECRET}
+      GATEWAY_SECRET_KEY: ${GATEWAY_SECRET_KEY}
+      REQUEST_API_GATEWAY: ${REQUEST_API_GATEWAY}
+      INTERNAL_SECRET_KEY: ${INTERNAL_SECRET_KEY}
+      SERVER_TIMEOUT: ${SERVER_TIMEOUT}
+      PRODUCT_SERVICE_URL: http://product-service-veggo:${PRODUCT_SERVICE_CONT_PORT}
+      USER_SERVICE_URL: http://user-service-veggo:${USER_SERVICE_CONT_PORT}
+      DATABASE_HOST: postgres-veggo
+      DATABASE_PORT: ${DATABASE_CONT_PORT}
+      DATABASE_USER: ${DATABASE_USER}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+      DATABASE_NAME: ${ORDER_SERVICE_DB}
+      DATABASE_MAX_OPEN_CONNECTION: ${DATABASE_MAX_OPEN_CONNECTION}
+      DATABASE_MAX_IDLE_CONNECTION: ${DATABASE_MAX_IDLE_CONNECTION}
+      KAFKA_AUTO_OFFSET_RESET: ${KAFKA_AUTO_OFFSET_RESET}
+      KAFKA_BOOTSTRAP_SERVERS: redpanda-veggo:${KAFKA_INTERNAL_PORT}
+      KAFKA_GROUP_ID: ${ORDER_SERVICE_KAFKA_GROUP_ID}
+      KAFKA_PRODUCER_ENABLED: ${KAFKA_PRODUCER_ENABLED}
+      TOPIC_PRODUCT_UPDATE_STOCK: ${TOPIC_PRODUCT_UPDATE_STOCK}
+      TOPIC_ORDER_PUBLISH: ${TOPIC_ORDER_PUBLISH}
+      TOPIC_EMAIL_UPDATE_STATUS: ${TOPIC_EMAIL_UPDATE_STATUS}
+      TOPIC_DELETE_ORDER: ${TOPIC_DELETE_ORDER}
+      TOPIC_PAYMENT_SUCCESS: ${TOPIC_PAYMENT_SUCCESS}
+      TOPIC_UPDATE_STATUS_ORDER: ${TOPIC_UPDATE_STATUS_ORDER}
+      TOPIC_PUSH_NOTIF_ORDER: ${TOPIC_PUSH_NOTIF_ORDER}
+      REDIS_HOST: redis-veggo
+      REDIS_PORT: ${REDIS_CONT_PORT}
+      REDIS_PASSWORD: ${REDIS_PASSWORD
+      OPENSEARCH_HOST: http://opensearch-veggo:9200
+      OPENSEARCH_USERNAME: ${OPENSEARCH_USERNAME}
+      OPENSEARCH_PASSWORD: ${OPENSEARCH_PASSWORD}
+    networks:
+      - network-veggo
+
+  notification-service-veggo:
+    build:
+      context: ../services/notification-service
+      dockerfile: Dockerfile
+    image: veggo/notification-service:latest
+    container_name: notification-service-veggo
+    depends_on:
+      postgres-veggo:
+        condition: service_healthy
+      redpanda-veggo:
+        condition: service_started
+      redis-veggo:
+        condition: service_started
+    environment:
+      APP_PORT: ${NOTIFICATION_SERVICE_CONT_PORT}
+      APP_ENV: ${APP_ENV}
+      APP_NAME: ${NOTIFICATION_SERVICE_NAME}
+      WEB_PREFORK: ${WEB_PREFORK}
+      LOG_LEVEL: ${LOG_LEVEL}
+      JWT_SECRET_KEY: ${JWT_SECRET}
+      GATEWAY_SECRET_KEY: ${GATEWAY_SECRET_KEY}
+      REQUEST_API_GATEWAY: ${REQUEST_API_GATEWAY}
+      DATABASE_HOST: postgres-veggo
+      DATABASE_PORT: ${DATABASE_CONT_PORT}
+      DATABASE_USER: ${DATABASE_USER}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+      DATABASE_NAME: ${NOTIFICATION_SERVICE_DB}
+      DATABASE_MAX_OPEN_CONNECTION: ${DATABASE_MAX_OPEN_CONNECTION}
+      DATABASE_MAX_IDLE_CONNECTION: ${DATABASE_MAX_IDLE_CONNECTION}
+      KAFKA_AUTO_OFFSET_RESET: ${KAFKA_AUTO_OFFSET_RESET}
+      KAFKA_BOOTSTRAP_SERVERS: redpanda-veggo:${KAFKA_INTERNAL_PORT}
+      KAFKA_GROUP_ID: ${NOTIFICATION_SERVICE_KAFKA_GROUP_ID}
+      KAFKA_PRODUCER_ENABLED: ${KAFKA_PRODUCER_ENABLED}
+      TOPIC_NOTIF_EMAIL_VERIFICATION: ${TOPIC_NOTIF_EMAIL_VERIFICATION}
+      TOPIC_NOTIF_EMAIL_FORGOT_PASSWORD: ${TOPIC_NOTIF_EMAIL_FORGOT_PASSWORD}
+      TOPIC_NOTIF_EMAIL_CREATE_CUSTOMER: ${TOPIC_NOTIF_EMAIL_CREATE_CUSTOMER}
+      TOPIC_EMAIL_UPDATE_STATUS: ${TOPIC_EMAIL_UPDATE_STATUS}
+      TOPIC_PUSH_NOTIF: ${TOPIC_PUSH_NOTIF}
+      REDIS_HOST: redis-veggo
+      REDIS_PORT: ${REDIS_CONT_PORT}
+      REDIS_PASSWORD: ${REDIS_PASSWORD
+      EMAIL_HOST: ${EMAIL_HOST}
+      EMAIL_PORT: ${EMAIL_PORT}
+      EMAIL_USERNAME: ${EMAIL_USERNAME}
+      EMAIL_PASSWORD: ${EMAIL_PASSWORD}
+      EMAIL_SENDING: ${EMAIL_SENDING}
+      EMAIL_IS_TLS: ${EMAIL_IS_TLS}
+    networks:
+      - network-veggo
+
+  fe-veggo:
+    build:
+      context: ../frontend/veggo-fe
+      dockerfile: Dockerfile
+    image: veggo/veggo-fe:latest
+    container_name: fe-veggo
+    depends_on:
+      api-gateway-veggo:
+        condition: service_started
+    ports:
+      - "${HOST_FE_PORT}:${CONT_FE_PORT}"
+    environment:
+      VEGGO_API_BASE_URL: http://api-gateway-veggo:${API_GATEWAY_CONT_PORT}/api/v1
+      MIDTRANS_CLIENT_KEY: ${MIDTRANS_CLIENT_KEY}
+    networks:
+      - network-veggo
+
 
 volumes:
   postgresql_data:
@@ -278,5 +448,5 @@ volumes:
   redpanda_data:
 
 networks:
-  veggo-network:
+  network-veggo:
     driver: bridge
