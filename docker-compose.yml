@@ -24,11 +24,14 @@ services:
     container_name: minio-veggo
     ports:
       - "${MINIO_HOST_PORT}:${MINIO_CONT_PORT}"
-      - "${MINIO_DASH_HOST_PORT}:${MINIO_DASH_HOST_PORT}"
+      - "${MINIO_DASH_HOST_PORT}:${MINIO_DASH_CONT_PORT}"
     environment:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
-    command: server /data --console-address ":9001"
+    command: >
+      server /data
+      --address ":${MINIO_CONT_PORT}"
+      --console-address ":${MINIO_DASH_CONT_PORT}"
     volumes:
       - minio_data:/data
     networks:
@@ -185,8 +188,8 @@ services:
       LOG_LEVEL: ${LOG_LEVEL}
       JWT_SECRET_KEY: ${JWT_SECRET}
       JWT_ISSUER: ${JWT_ISSUER}
-      URL_FORGOT_PASSWORD: user-service-veggo:${USER_SERVICE_CONT_PORT}
-      URL_FRONT_FE: "http://localhost:3000" # sementara
+      URL_FORGOT_PASSWORD: http://localhost:${API_GATEWAY_HOST_PORT}
+      URL_FRONT_FE: "http://localhost:${API_GATEWAY_HOST_PORT}" # sementara
       DATABASE_HOST: postgres-veggo
       DATABASE_PORT: ${DATABASE_CONT_PORT}
       DATABASE_USER: ${DATABASE_USER}
@@ -204,7 +207,7 @@ services:
       TOPIC_NOTIF_EMAIL_UPDATE_CUSTOMER: ${TOPIC_NOTIF_EMAIL_UPDATE_CUSTOMER}
       TOPIC_PUSH_NOTIF: ${TOPIC_PUSH_NOTIF}
       MINIO_ENDPOINT: minio-veggo:${MINIO_CONT_PORT}
-      MINIO_PUBLIC_URL: http://minio-veggo:${MINIO_CONT_PORT}
+      MINIO_PUBLIC_URL: http://localhost:${MINIO_HOST_PORT} # pakai local
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
       MINIO_BUCKET: ${USER_SERVICE_MINIO_BUCKET}
@@ -257,7 +260,60 @@ services:
       TOPIC_PRODUCT_PUBLISH: ${TOPIC_PRODUCT_PUBLISH}
       TOPIC_PRODUCT_DELETE: ${TOPIC_PRODUCT_DELETE}
       MINIO_ENDPOINT: minio-veggo:${MINIO_CONT_PORT}
-      MINIO_PUBLIC_URL: http://minio-veggo:${MINIO_CONT_PORT}
+      MINIO_PUBLIC_URL: http://localhost:${MINIO_HOST_PORT}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_BUCKET: ${PRODUCT_SERVICE_MINIO_BUCKET}
+      MINIO_USE_SSL: ${MINIO_USE_SSL}
+      REDIS_HOST: redis-veggo
+      REDIS_PORT: ${REDIS_CONT_PORT}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      OPENSEARCH_HOST: http://opensearch-veggo:9200
+      OPENSEARCH_USERNAME: ${OPENSEARCH_USERNAME}
+      OPENSEARCH_PASSWORD: ${OPENSEARCH_PASSWORD}
+    networks:
+      - network-veggo
+
+  product-worker-veggo:
+    image: veggo/product-service:latest
+    container_name: product-worker-veggo
+    command: ["./product-service", "worker"]
+    depends_on:
+      postgres-veggo:
+        condition: service_healthy
+      redpanda-veggo:
+        condition: service_started
+      minio-veggo:
+        condition: service_started
+      redis-veggo:
+        condition: service_started
+      opensearch-veggo:
+        condition: service_healthy
+    environment:
+      APP_PORT: ${PRODUCT_SERVICE_CONT_PORT}
+      APP_ENV: ${APP_ENV}
+      APP_NAME: ${PRODUCT_SERVICE_NAME}
+      WEB_PREFORK: ${WEB_PREFORK}
+      LOG_LEVEL: ${LOG_LEVEL}
+      JWT_SECRET_KEY: ${JWT_SECRET}
+      GATEWAY_SECRET_KEY: ${GATEWAY_SECRET_KEY}
+      REQUEST_API_GATEWAY: ${REQUEST_API_GATEWAY}
+      INTERNAL_SECRET_KEY: ${INTERNAL_SECRET_KEY}
+      DATABASE_HOST: postgres-veggo
+      DATABASE_PORT: ${DATABASE_CONT_PORT}
+      DATABASE_USER: ${DATABASE_USER}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+      DATABASE_NAME: ${PRODUCT_SERVICE_DB}
+      DATABASE_MAX_OPEN_CONNECTION: ${DATABASE_MAX_OPEN_CONNECTION}
+      DATABASE_MAX_IDLE_CONNECTION: ${DATABASE_MAX_IDLE_CONNECTION}
+      KAFKA_AUTO_OFFSET_RESET: ${KAFKA_AUTO_OFFSET_RESET}
+      KAFKA_BOOTSTRAP_SERVERS: redpanda-veggo:${KAFKA_INTERNAL_PORT}
+      KAFKA_GROUP_ID: ${PRODUCT_SERVICE_KAFKA_GROUP_ID}
+      KAFKA_PRODUCER_ENABLED: ${KAFKA_PRODUCER_ENABLED}
+      TOPIC_PRODUCT_PUBLISH: ${TOPIC_PRODUCT_PUBLISH}
+      TOPIC_PRODUCT_DELETE: ${TOPIC_PRODUCT_DELETE}
+      MINIO_ENDPOINT: minio-veggo:${MINIO_CONT_PORT}
+      MINIO_PUBLIC_URL: http://localhost:${MINIO_HOST_PORT}
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
       MINIO_BUCKET: ${PRODUCT_SERVICE_MINIO_BUCKET}
@@ -312,7 +368,7 @@ services:
       TOPIC_PAYMENT_SUCCESS: ${TOPIC_PAYMENT_SUCCESS}
       REDIS_HOST: redis-veggo
       REDIS_PORT: ${REDIS_CONT_PORT}
-      REDIS_PASSWORD: ${REDIS_PASSWORD
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
       MIDTRANS_SERVER_KEY: ${MIDTRANS_SERVER_KEY}
       MIDTRANS_ENVIRONMENT: ${MIDTRANS_ENVIRONMENT}
     networks:
@@ -366,7 +422,7 @@ services:
       TOPIC_PUSH_NOTIF_ORDER: ${TOPIC_PUSH_NOTIF_ORDER}
       REDIS_HOST: redis-veggo
       REDIS_PORT: ${REDIS_CONT_PORT}
-      REDIS_PASSWORD: ${REDIS_PASSWORD
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
       OPENSEARCH_HOST: http://opensearch-veggo:9200
       OPENSEARCH_USERNAME: ${OPENSEARCH_USERNAME}
       OPENSEARCH_PASSWORD: ${OPENSEARCH_PASSWORD}
@@ -413,7 +469,55 @@ services:
       TOPIC_PUSH_NOTIF: ${TOPIC_PUSH_NOTIF}
       REDIS_HOST: redis-veggo
       REDIS_PORT: ${REDIS_CONT_PORT}
-      REDIS_PASSWORD: ${REDIS_PASSWORD
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      EMAIL_HOST: ${EMAIL_HOST}
+      EMAIL_PORT: ${EMAIL_PORT}
+      EMAIL_USERNAME: ${EMAIL_USERNAME}
+      EMAIL_PASSWORD: ${EMAIL_PASSWORD}
+      EMAIL_SENDING: ${EMAIL_SENDING}
+      EMAIL_IS_TLS: ${EMAIL_IS_TLS}
+    networks:
+      - network-veggo
+
+  notification-worker-veggo:
+    image: veggo/notification-service:latest
+    container_name: notification-worker-veggo
+    command: ["./notification-service", "worker"]
+    depends_on:
+      postgres-veggo:
+        condition: service_healthy
+      redpanda-veggo:
+        condition: service_started
+      redis-veggo:
+        condition: service_started
+    environment:
+      APP_PORT: ${NOTIFICATION_SERVICE_CONT_PORT}
+      APP_ENV: ${APP_ENV}
+      APP_NAME: ${NOTIFICATION_SERVICE_NAME}
+      WEB_PREFORK: ${WEB_PREFORK}
+      LOG_LEVEL: ${LOG_LEVEL}
+      JWT_SECRET_KEY: ${JWT_SECRET}
+      GATEWAY_SECRET_KEY: ${GATEWAY_SECRET_KEY}
+      REQUEST_API_GATEWAY: ${REQUEST_API_GATEWAY}
+      DATABASE_HOST: postgres-veggo
+      DATABASE_PORT: ${DATABASE_CONT_PORT}
+      DATABASE_USER: ${DATABASE_USER}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+      DATABASE_NAME: ${NOTIFICATION_SERVICE_DB}
+      DATABASE_MAX_OPEN_CONNECTION: ${DATABASE_MAX_OPEN_CONNECTION}
+      DATABASE_MAX_IDLE_CONNECTION: ${DATABASE_MAX_IDLE_CONNECTION}
+      KAFKA_AUTO_OFFSET_RESET: ${KAFKA_AUTO_OFFSET_RESET}
+      KAFKA_BOOTSTRAP_SERVERS: redpanda-veggo:${KAFKA_INTERNAL_PORT}
+      KAFKA_GROUP_ID: ${NOTIFICATION_SERVICE_KAFKA_GROUP_ID}
+      KAFKA_PRODUCER_ENABLED: ${KAFKA_PRODUCER_ENABLED}
+      TOPIC_NOTIF_EMAIL_VERIFICATION: ${TOPIC_NOTIF_EMAIL_VERIFICATION}
+      TOPIC_NOTIF_EMAIL_FORGOT_PASSWORD: ${TOPIC_NOTIF_EMAIL_FORGOT_PASSWORD}
+      TOPIC_NOTIF_EMAIL_CREATE_CUSTOMER: ${TOPIC_NOTIF_EMAIL_CREATE_CUSTOMER}
+      TOPIC_EMAIL_UPDATE_STATUS: ${TOPIC_EMAIL_UPDATE_STATUS}
+      TOPIC_PUSH_NOTIF: ${TOPIC_PUSH_NOTIF}
+      REDIS_HOST: redis-veggo
+      REDIS_PORT: ${REDIS_CONT_PORT}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
       EMAIL_HOST: ${EMAIL_HOST}
       EMAIL_PORT: ${EMAIL_PORT}
       EMAIL_USERNAME: ${EMAIL_USERNAME}
