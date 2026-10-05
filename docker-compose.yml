@@ -341,9 +341,9 @@ services:
       redis-veggo:
         condition: service_started
     environment:
-      APP_PORT: ${PRODUCT_SERVICE_CONT_PORT}
+      APP_PORT: ${PAYMENT_SERVICE_CONT_PORT}
       APP_ENV: ${APP_ENV}
-      APP_NAME: ${PRODUCT_SERVICE_NAME}
+      APP_NAME: ${PAYMENT_SERVICE_NAME}
       WEB_PREFORK: ${WEB_PREFORK}
       LOG_LEVEL: ${LOG_LEVEL}
       JWT_SECRET_KEY: ${JWT_SECRET}
